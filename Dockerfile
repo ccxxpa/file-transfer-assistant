@@ -2,6 +2,10 @@
 ARG NODE_IMAGE=node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81
 FROM ${NODE_IMAGE}
 
+LABEL org.opencontainers.image.source="https://github.com/ccxxpa/file-transfer-assistant" \
+    org.opencontainers.image.description="Self-hosted file and text sharing across your devices" \
+    org.opencontainers.image.licenses="GPL-3.0-only"
+
 WORKDIR /app
 RUN apk add --no-cache su-exec
 COPY package.json package-lock.json ./

@@ -9,15 +9,27 @@
 
 ## Docker 启动
 
+镜像支持 `amd64` / `arm64`，无需登录即可拉取。直接运行：
+
+```bash
+docker run -d --name file-transfer-assistant --restart unless-stopped --init \
+  -p 4826:4826 -e ALLOW_REMOTE_SETUP=true \
+  -v "$PWD/assistant-data:/data" \
+  ghcr.io/ccxxpa/file-transfer-assistant:1.2.1
+```
+
+或使用 Compose：
+
 ```bash
 git clone https://github.com/ccxxpa/file-transfer-assistant.git
 cd file-transfer-assistant
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 打开 `http://服务器IP:4826`，首次访问设置密码。公网使用请配置 HTTPS。
 
-数据保存在 `./assistant-data`，升级时保留此目录。默认单文件上限 100 MB、总容量 5 GB；需要调整时，将 `.env.example` 复制为 `.env` 后修改。
+数据保存在 `./assistant-data`，升级时保留此目录。默认单文件上限 100 MB、总容量 5 GB；Compose 部署可将 `.env.example` 复制为 `.env` 后调整。另提供 `latest` 标签。
 
 ## 本地运行
 
