@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#f3f5f4" />
+    <meta
+      name="description"
+      content="在自己的设备之间，轻松传递文字、图片和文件。"
+    />
+    <title>文件传输助手</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css?v=20261024-copy" />
+    <script src="/vendor/lucide.js" defer></script>
+    <script src="/viewport.js?v=20260913-ios-focus" defer></script>
+    <script src="/app.js?v=20261024-copy" defer></script>
+  </head>
+  <body>
+    <div id="boot" class="boot">
+      <span class="spinner"></span><span>正在打开文件传输助手…</span>
+    </div>
+    <section id="auth" class="auth-screen" hidden>
+      <div class="auth-story">
+        <div class="story-logo">
+          <i data-lucide="send"></i><span>文件传输助手</span>
+        </div>
+        <div class="story-content">
+          <h1>从这台，<br />到每一台。</h1>
+          <p>文字、截图、文件，随手发给自己。<br />下次打开，它们都还在。</p>
+          <div class="story-devices">
+            <i data-lucide="monitor"></i><span class="connection-line"></span
+            ><i data-lucide="laptop"></i><span class="connection-line"></span
+            ><i data-lucide="smartphone"></i>
+          </div>
+        </div>
+        <span class="story-foot">你的设备 · 你的记录</span>
+      </div>
+      <div class="auth-main">
+        <form id="auth-form" class="auth-form">
+          <div class="brand-icon large"><i data-lucide="folder-up"></i></div>
+          <h2 id="auth-title">欢迎回来</h2>
+          <p id="auth-description">输入访问密码，接着上次的记录。</p>
+          <label for="password">访问密码</label>
+          <div class="password-wrap">
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              maxlength="256"
+              required
+            /><button
+              type="button"
+              id="toggle-password"
+              class="icon-button"
+              aria-label="显示密码"
+            >
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+          <div id="confirm-wrap" hidden>
+            <label for="confirm-password">再次输入密码</label
+            ><input
+              id="confirm-password"
+              type="password"
+              autocomplete="new-password"
+              maxlength="256"
+            />
+          </div>
+          <p id="auth-error" class="form-error" role="alert"></p>
+          <button id="auth-submit" class="primary-button" type="submit">
+            进入我的传输助手 <i data-lucide="arrow-right"></i>
+          </button>
+          <p class="auth-note">
+            <i data-lucide="lock-keyhole"></i
+            ><span>只有知道密码的人，才能访问这些记录。</span>
+          </p>
+        </form>
+      </div>
+    </section>
+    <div id="workspace" class="workspace" hidden>
+      <nav class="rail" aria-label="主导航">
+        <div class="rail-logo"><i data-lucide="send"></i></div>
+        <button
+          class="rail-button active"
+          id="home-button"
+          title="文件传输助手"
+          aria-label="文件传输助手"
+        >
+          <i data-lucide="message-square"></i>
+        </button>
+        <div class="rail-spacer"></div>
+        <button
+          id="settings-rail"
+          class="rail-button"
+          title="设置"
+          aria-label="设置"
+        >
+          <i data-lucide="settings-2"></i>
+        </button>
+        <div class="rail-device" title="当前设备">
+          <i data-lucide="monitor"></i>
+        </div>
+      </nav>
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-heading">
+          <h2>文件传输</h2>
+          <button
+            id="close-sidebar"
+            class="icon-button mobile-only"
+            aria-label="关闭导航"
+          >
+            <i data-lucide="x"></i></button
+          ><span class="private-label"
+            ><i data-lucide="lock-keyhole"></i> 私人空间</span
+          >
+        </div>
+        <button id="chat-button" class="conversation">
+          <span class="brand-icon"><i data-lucide="folder-up"></i></span
+          ><span class="conversation-label"
+            ><strong>文件传输助手</strong
+            ><span>在自己的设备间，随手传</span></span
+          >
+        </button>
+        <div class="sidebar-section-label">历史记录</div>
+        <nav class="filters" aria-label="消息类型">
+          <button data-filter="all" class="filter active">
+            <i data-lucide="messages-square"></i><span>全部消息</span
+            ><span data-count="total" class="count">0</span></button
+          ><button data-filter="text" class="filter">
+            <i data-lucide="type"></i><span>文字与链接</span
+            ><span data-count="text" class="count">0</span></button
+          ><button data-filter="image" class="filter">
+            <i data-lucide="image"></i><span>图片</span
+            ><span data-count="image" class="count">0</span></button
+          ><button data-filter="file" class="filter">
+            <i data-lucide="file"></i><span>文件</span
+            ><span data-count="file" class="count">0</span></button
+          ><button data-filter="trash" class="filter trash-filter">
+            <i data-lucide="trash-2"></i><span>最近删除</span
+            ><span data-count="trash" class="count">0</span>
+          </button>
+        </nav>
+        <div class="devices-section">
+          <div class="sidebar-section-label">
+            在线设备 <span id="device-count">0</span>
+          </div>
+          <div id="device-list"></div>
+        </div>
+        <div class="storage-footer">
+          <div>
+            <span><i data-lucide="hard-drive"></i> 已用空间</span
+            ><strong id="storage-value">0 B</strong>
+          </div>
+          <progress
+            id="storage-progress"
+            value="0"
+            max="100"
+            aria-label="存储空间用量"
+          ></progress>
+          <p>记录保存在运行程序的设备上</p>
+        </div>
+      </aside>
+      <button
+        id="sidebar-overlay"
+        class="sidebar-overlay"
+        aria-label="关闭导航"
+        hidden
+      ></button>
+      <main class="chat-main">
+        <header class="chat-header">
+          <button
+            id="open-sidebar"
+            class="icon-button mobile-only"
+            aria-label="打开导航"
+          >
+            <i data-lucide="panel-left"></i>
+          </button>
+          <div class="chat-heading">
+            <h1 id="view-title">文件传输助手</h1>
+            <div class="connection-status">
+              <span id="connection-dot" class="status-dot"></span
+              ><span id="connection-text">正在连接…</span>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button id="open-date-delete" class="date-delete-button" type="button" aria-label="按日期删除"><span class="date-action-label">按日期删除</span></button>
+            <div class="search-box">
+              <i data-lucide="search"></i
+              ><input
+                id="search"
+                type="search"
+                placeholder="搜索消息、文件"
+                aria-label="搜索消息、文件"
+              /><span class="search-shortcut">⌘ K</span>
+            </div>
+            <button
+              id="search-toggle"
+              class="icon-button mobile-only"
+              aria-label="搜索历史"
+            >
+              <i data-lucide="search"></i></button
+            ><button
+              id="settings-button"
+              class="icon-button"
+              title="设置"
+              aria-label="设置"
+            >
+              <i data-lucide="ellipsis"></i>
+            </button>
+          </div>
+        </header>
+        <div id="search-summary" class="search-summary" hidden></div>
+        <div id="history-note" class="history-note" hidden>
+          删除的内容保留在这里，可随时恢复；仍会占用存储空间。
+        </div>
+        <div
+          id="messages"
+          class="messages"
+          role="region"
+          aria-label="聊天记录"
+          tabindex="0"
+        >
+          <button id="load-more" class="load-more" hidden>
+            查看更早的消息
+          </button>
+          <div id="message-list"></div>
+          <div id="empty" class="empty-state">
+            <div class="empty-icon"><i data-lucide="folder-up"></i></div>
+            <h2 id="empty-title">给自己发点什么</h2>
+            <p id="empty-description">
+              一段文字、一张截图，或一个文件。<br />从这里开始，在你的设备之间流转。
+            </p>
+            <div id="empty-tips" class="empty-tips">
+              <span><i data-lucide="clipboard-paste"></i> 粘贴文字和截图</span
+              ><span><i data-lucide="mouse-pointer-2"></i> 拖入文件</span>
+            </div>
+          </div>
+        </div>
+        <button id="new-messages" class="new-messages" hidden>
+          <i data-lucide="arrow-down"></i> 有新消息，点击查看
+        </button>
+        <form id="composer" class="composer">
+          <button
+            id="toggle-attachments"
+            type="button"
+            class="icon-button mobile-only"
+            aria-label="展开附件选项"
+            aria-expanded="false"
+            aria-controls="attachment-tools"
+          >
+            <i data-lucide="plus"></i>
+          </button>
+          <div id="attachment-tools" class="composer-toolbar">
+            <div>
+              <button
+                id="attach-file"
+                class="icon-button"
+                type="button"
+                title="添加文件"
+                aria-label="添加文件"
+              >
+                <i data-lucide="paperclip"></i
+                ><span class="mobile-only">文件</span></button
+              ><button
+                id="attach-image"
+                class="icon-button"
+                type="button"
+                title="添加图片"
+                aria-label="添加图片"
+              >
+                <i data-lucide="image"></i
+                ><span class="mobile-only">图片</span></button
+              ><span class="toolbar-divider"></span
+              ><span id="composer-device" class="composer-device"
+                >当前设备</span
+              >
+            </div>
+            <span class="save-note"
+              ><i data-lucide="database"></i> 发送后保存到历史</span
+            >
+          </div>
+          <div id="upload-queue" class="upload-queue" aria-live="polite"></div>
+          <textarea
+            id="message-input"
+            rows="3"
+            placeholder="发送文字，或粘贴截图…"
+            aria-label="消息内容"
+            maxlength="100000"
+          ></textarea>
+          <div class="composer-bottom">
+            <span class="keyboard-hint">Enter 发送，Shift + Enter 换行</span
+            ><button
+              id="send-button"
+              type="submit"
+              class="send-button"
+              disabled
+            >
+              发送 <i data-lucide="arrow-up"></i>
+            </button>
+          </div>
+          <input id="file-input" type="file" multiple hidden /><input
+            id="image-input"
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+          />
+        </form>
+        <div id="trash-bottom" class="trash-bottom" hidden>
+          <span><i data-lucide="archive-restore"></i>清理前可恢复到聊天历史。</span>
+          <button id="empty-trash" class="danger-button" type="button">清空最近删除</button>
+        </div>
+        <div id="drop-zone" class="drop-zone" hidden>
+          <div>
+            <i data-lucide="upload"></i>
+            <h2>松手，发送到这里</h2>
+            <p>文件将保存到你的传输助手</p>
+          </div>
+        </div>
+      </main>
+    </div>
+    <dialog id="settings-dialog" class="settings-dialog">
+      <div class="dialog-heading">
+        <h2>设置</h2>
+        <button
+          class="icon-button"
+          data-close="settings-dialog"
+          aria-label="关闭设置"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <form id="device-form">
+        <label for="device-name">这台设备的名称</label>
+        <p>其他设备会通过这个名称认出你。</p>
+        <div class="device-name-row">
+          <input id="device-name" maxlength="30" required /><button
+            class="small-primary"
+            type="submit"
+          >
+            保存
+          </button>
+        </div>
+      </form>
+      <details id="password-section" class="settings-info settings-section">
+        <summary>修改访问密码</summary>
+        <form id="password-form" class="settings-form">
+          <label for="current-password">当前密码</label>
+          <input id="current-password" type="password" autocomplete="current-password" maxlength="256" required />
+          <label for="new-password">新密码</label>
+          <input id="new-password" type="password" autocomplete="new-password" minlength="8" maxlength="256" placeholder="至少 8 位" required />
+          <label for="repeat-password">再次输入新密码</label>
+          <input id="repeat-password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required />
+          <p>修改成功后，本浏览器保持登录，其他设备需要用新密码重新登录。</p>
+          <p id="password-error" class="form-error" role="alert"></p>
+          <p id="password-feedback" class="form-success" role="status"></p>
+          <div class="settings-form-actions">
+            <button id="show-new-password" class="text-button" type="button" aria-pressed="false">显示密码</button>
+            <button id="save-password" class="small-primary" type="submit">修改密码</button>
+          </div>
+        </form>
+      </details>
+      <div class="settings-info">
+        <h3>数据与文件</h3>
+        <div><span>保存方式</span><strong>本地持久保存</strong></div>
+        <div>
+          <span>单个文件上限</span><strong id="file-limit">100 MB</strong>
+        </div>
+        <div>
+          <span>已用 / 总空间</span><strong id="settings-storage">—</strong>
+        </div>
+        <p>更新程序前，请保留完整数据目录。</p>
+      </div>
+      <section class="settings-info">
+        <h3>最近删除</h3>
+        <p id="trash-summary">正在读取…</p>
+        <form id="cleanup-form" class="settings-form">
+          <label for="trash-retention">自动清理</label>
+          <select id="trash-retention" aria-describedby="cleanup-help">
+            <option value="0">关闭，只手动清空</option>
+            <option value="1">删除满 1 天后清理</option>
+            <option value="7" selected>删除满 7 天后清理（默认）</option>
+            <option value="30">删除满 30 天后清理</option>
+            <option value="90">删除满 90 天后清理</option>
+          </select>
+          <p id="cleanup-help">开启后，每小时检查一次。按移入最近删除的时间计时，到期记录和附件将永久删除。更改天数也会应用于已删除的内容。</p>
+          <p id="cleanup-error" class="form-error" role="alert"></p>
+          <p id="cleanup-feedback" class="form-success" role="status"></p>
+          <div class="settings-form-actions">
+            <button id="settings-empty-trash" class="danger-button" type="button">清空最近删除</button>
+            <button id="save-cleanup" class="small-primary" type="submit">保存设置</button>
+          </div>
+        </form>
+        <p id="pending-cleanup" hidden></p>
+      </section>
+      <div class="settings-info">
+        <h3>使用小提示</h3>
+        <p>
+          点击消息下方的“复制”即可复制文字。如果浏览器不支持自动复制，
+          会打开已选中文字的窗口，方便长按或使用快捷键复制。
+        </p>
+        <p>网页关闭后，已保存的内容还在。再次打开即可继续查看。</p>
+      </div>
+      <button id="logout" class="logout-button">
+        <i data-lucide="log-out"></i> 退出登录
+      </button>
+    </dialog>
+    <dialog id="date-delete-dialog" class="confirm-dialog" aria-labelledby="date-delete-title">
+      <h2 id="date-delete-title">按日期删除</h2>
+      <p id="date-delete-scope"></p>
+      <form id="date-delete-form" class="settings-form">
+        <label for="date-delete-mode">删除哪些日期</label>
+        <select id="date-delete-mode">
+          <option value="before">某个日期之前</option>
+          <option value="day">某一天</option>
+          <option value="range">一段日期范围</option>
+        </select>
+        <div class="date-presets" aria-label="快速选择日期">
+          <button class="text-button" type="button" data-days-before="7">早于 7 天前</button>
+          <button class="text-button" type="button" data-days-before="30">早于 30 天前</button>
+        </div>
+        <label id="date-start-label" for="date-delete-start">截止日期（不含当天）</label>
+        <input id="date-delete-start" type="date" min="1970-01-01" max="9999-12-30" required />
+        <div id="date-end-field" class="settings-form" hidden>
+          <label for="date-delete-end">结束日期（含当天）</label>
+          <input id="date-delete-end" type="date" min="1970-01-01" max="9999-12-30" />
+        </div>
+        <p id="date-delete-zone" class="date-help"></p>
+        <div id="date-delete-preview" class="date-delete-preview" role="status" aria-live="polite" hidden>
+          <strong id="date-delete-count"></strong>
+          <p id="date-delete-range"></p>
+          <p id="date-delete-note"></p>
+        </div>
+        <p id="date-delete-error" class="form-error" role="alert"></p>
+        <div class="settings-form-actions">
+          <button class="text-button" data-close="date-delete-dialog" type="button">取消</button>
+          <button id="date-delete-submit" class="small-primary" type="submit">查看匹配记录</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="empty-trash-dialog" class="confirm-dialog" aria-labelledby="empty-trash-title">
+      <h2 id="empty-trash-title">永久清空最近删除？</h2>
+      <p id="empty-trash-description"></p>
+      <p>清空后无法恢复。聊天历史中的内容会保留。</p>
+      <p id="empty-trash-error" class="form-error" role="alert"></p>
+      <form id="empty-trash-form" class="settings-form-actions">
+        <button class="text-button" data-close="empty-trash-dialog" type="button" autofocus>取消</button>
+        <button id="confirm-empty-trash" class="danger-button danger-solid" type="submit">永久清空</button>
+      </form>
+    </dialog>
+    <dialog id="image-dialog" class="image-dialog">
+      <div class="image-dialog-toolbar">
+        <span id="preview-name"></span
+        ><a
+          id="preview-download"
+          class="icon-button"
+          title="下载图片"
+          aria-label="下载图片"
+          ><i data-lucide="download"></i></a
+        ><button
+          class="icon-button"
+          data-close="image-dialog"
+          aria-label="关闭预览"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <img id="preview-image" alt="图片预览" />
+    </dialog>
+    <dialog id="copy-dialog" class="copy-dialog">
+      <div class="dialog-heading">
+        <h2>复制文字</h2>
+        <button
+          class="icon-button"
+          data-close="copy-dialog"
+          aria-label="关闭复制窗口"
+        >
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <p>当前浏览器无法自动复制。请长按或按 Ctrl / ⌘ + C 复制选中的文字。</p>
+      <textarea id="copy-content" readonly aria-label="待复制的文字"></textarea>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

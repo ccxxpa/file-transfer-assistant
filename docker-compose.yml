@@ -1,0 +1,29 @@
+services:
+  file-transfer-assistant:
+    build: .
+    image: file-transfer-assistant:1.2.1
+    container_name: file-transfer-assistant
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    ports:
+      - "${APP_PORT:-4826}:4826"
+    environment:
+      TZ: Asia/Shanghai
+      HOST: 0.0.0.0
+      PORT: "4826"
+      DATA_DIR: /data
+      ALLOW_REMOTE_SETUP: "true"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      MAX_FILE_MB: "${MAX_FILE_MB:-100}"
+      MAX_STORAGE_MB: "${MAX_STORAGE_MB:-5120}"
+    volumes:
+      - "${ASSISTANT_DATA_DIR:-./assistant-data}:/data"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

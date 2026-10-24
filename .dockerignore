@@ -1,0 +1,15 @@
+# Only application code enters the build context. No private data or artifacts.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!LICENSE
+!licenses/
+!licenses/**
+!assistant/
+!assistant/server.js
+!assistant/public/
+!assistant/public/**
+!deploy/
+!deploy/docker-entrypoint.sh
+!deploy/healthcheck.js
