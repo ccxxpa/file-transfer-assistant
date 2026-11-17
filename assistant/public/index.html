@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="/style.css?v=20261024-copy" />
     <script src="/vendor/lucide.js" defer></script>
     <script src="/viewport.js?v=20260913-ios-focus" defer></script>
-    <script src="/app.js?v=20261024-copy" defer></script>
+    <script src="/app.js?v=20261116-retention" defer></script>
   </head>
   <body>
     <div id="boot" class="boot">
@@ -375,10 +375,30 @@
         <p>更新程序前，请保留完整数据目录。</p>
       </div>
       <section class="settings-info">
+        <h3>自动删除旧消息</h3>
+        <form id="message-retention-form" class="settings-form">
+          <label for="message-retention">消息保留时间</label>
+          <select id="message-retention" aria-describedby="message-retention-help">
+            <option value="0" selected>关闭，永久保留（默认）</option>
+            <option value="7">7 天</option>
+            <option value="30">30 天（约 1 个月）</option>
+            <option value="90">90 天（约 3 个月）</option>
+            <option value="180">180 天（约半年）</option>
+            <option value="365">365 天（约 1 年）</option>
+          </select>
+          <p id="message-retention-help">每小时检查一次。按发送时间计算，到期的文字、图片和文件会移入“最近删除”，再按下方规则清空。也适用于已有消息；恢复后重新计时。</p>
+          <p id="message-retention-error" class="form-error" role="alert"></p>
+          <p id="message-retention-feedback" class="form-success" role="status"></p>
+          <div class="settings-form-actions">
+            <button id="save-message-retention" class="small-primary" type="submit">保存保留时间</button>
+          </div>
+        </form>
+      </section>
+      <section class="settings-info">
         <h3>最近删除</h3>
         <p id="trash-summary">正在读取…</p>
         <form id="cleanup-form" class="settings-form">
-          <label for="trash-retention">自动清理</label>
+          <label for="trash-retention">回收站自动清空</label>
           <select id="trash-retention" aria-describedby="cleanup-help">
             <option value="0">关闭，只手动清空</option>
             <option value="1">删除满 1 天后清理</option>

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { DatabaseSync } from "node:sqlite";
 import { createAssistant } from "../server.js";
 
 const password = "local-test-password-2026";
@@ -115,6 +116,9 @@ const trash = (f, id, deleted = true) => f.request(`/api/messages/${id}`, {
 });
 const setRetention = (f, days) => f.request("/api/settings", {
   method: "PUT", body: { trashRetentionDays: days },
+});
+const setMessageRetention = (f, days) => f.request("/api/settings", {
+  method: "PUT", body: { messageRetentionDays: days },
 });
 const previewTrash = async (f) => (await f.request("/api/trash/preview")).json();
 const emptyTrash = async (f, preview) => f.request("/api/trash/empty", {
@@ -332,6 +336,167 @@ test("trash settings require authentication, validate options and persist the se
   assert.equal((await (await f.request("/api/settings")).json()).trashRetentionDays, 0);
 });
 
+test("message retention defaults off, validates and persists independently with atomic settings updates", async (t) => {
+  const f = await fixture(t);
+  assert.equal((await setMessageRetention(f, 30)).status, 401);
+  await f.setup();
+  assert.equal((await (await f.request("/api/settings")).json()).messageRetentionDays, 0);
+  for (const invalid of [-1, 1, 29, 30.5, "30", null, true])
+    assert.equal((await setMessageRetention(f, invalid)).status, 400);
+  assert.equal((await f.request("/api/settings", {
+    method: "PUT", body: { messageRetentionDays: 30 }, headers: { Origin: "https://other.invalid" },
+  })).status, 403);
+  for (const days of [7, 30, 90, 180, 365, 0]) {
+    assert.equal((await setMessageRetention(f, days)).status, 200);
+    assert.equal((await (await f.request("/api/stats")).json()).messageRetentionDays, days);
+  }
+  await setRetention(f, 90);
+  await setMessageRetention(f, 30);
+  for (const body of [{}, { constructor: 7 }, { toString: 7 },
+    { messageRetentionDays: 7, trashRetentionDays: 2 }])
+    assert.equal((await f.request("/api/settings", { method: "PUT", body })).status, 400);
+  await f.restart();
+  const settings = await (await f.request("/api/settings")).json();
+  assert.equal(settings.messageRetentionDays, 30);
+  assert.equal(settings.trashRetentionDays, 90);
+});
+
+test("automatic message retention covers all types and pages, with exact rolling-day boundaries", async (t) => {
+  const f = await fixture(t);
+  await f.setup();
+  const now = Date.now();
+  const cutoff = now - 30 * 864e5;
+  const old = [];
+  for (let i = 0; i < 65; i++) old.push(await f.send(`old message ${i}`));
+  const file = await (await f.upload("retained until trash expires", "旧附件.txt")).json();
+  const image = await (await f.upload(fixturePng, "旧图片.png", "image/png")).json();
+  old.push(file, image);
+  const age = f.db().prepare("UPDATE messages SET created_at=? WHERE id=?");
+  for (const item of old) age.run(cutoff - 1, item.id);
+  const boundary = await f.send("exactly thirty days");
+  age.run(cutoff, boundary.id);
+  const recent = await f.send("one millisecond newer");
+  age.run(cutoff + 1, recent.id);
+  const future = await f.send("future timestamp");
+  age.run(now + 864e5, future.id);
+  await setRetention(f, 0);
+  assert.equal((await f.cleanup(now)).archivedCount, 0);
+  await setMessageRetention(f, 30);
+  assert.equal(f.db().prepare("SELECT COUNT(*) AS n FROM messages WHERE deleted_at IS NOT NULL").get().n, 0);
+  assert.deepEqual(await f.cleanup(now), { archivedCount: 68, deletedCount: 0, pendingFiles: 0 });
+  assert.equal((await f.cleanup(now)).archivedCount, 0);
+  assert.deepEqual((await (await f.request("/api/messages")).json()).messages.map((m) => m.id), [recent.id, future.id]);
+  assert.equal((await previewTrash(f)).count, 68);
+  assert.equal(readdirSync(path.join(f.dataDir, "files")).length, 2);
+  assert.equal((await f.request(`/api/files/${file.id}`)).status, 404);
+  assert.equal((await (await f.request("/api/stats")).json()).usedBytes, file.size + image.size);
+  await batchMessages(f, [file.id, image.id], false);
+  assert.equal(await (await f.request(`/api/files/${file.id}`)).text(), "retained until trash expires");
+  assert.deepEqual(Buffer.from(await (await f.request(`/api/files/${image.id}`)).arrayBuffer()), fixturePng);
+});
+
+test("automatically archived files get the full trash grace period and existing trash clocks stay intact", async (t) => {
+  const f = await fixture(t);
+  await f.setup();
+  const now = Date.now();
+  const old = await (await f.upload("automatic cleanup file")).json();
+  const manual = await f.send("already in trash");
+  f.db().prepare("UPDATE messages SET created_at=?").run(now - 100 * 864e5);
+  await trash(f, manual.id);
+  const deletedAt = now - 6 * 864e5;
+  f.db().prepare("UPDATE messages SET deleted_at=? WHERE id=?").run(deletedAt, manual.id);
+  await setMessageRetention(f, 30);
+  assert.deepEqual(await f.cleanup(now), { archivedCount: 1, deletedCount: 0, pendingFiles: 0 });
+  assert.equal(f.db().prepare("SELECT deleted_at FROM messages WHERE id=?").get(old.id).deleted_at, now);
+  assert.equal(f.db().prepare("SELECT deleted_at FROM messages WHERE id=?").get(manual.id).deleted_at, deletedAt);
+  assert.equal((await f.cleanup(now + 7 * 864e5 - 1)).deletedCount, 1);
+  assert.equal(readdirSync(path.join(f.dataDir, "files")).length, 1);
+  assert.equal((await f.cleanup(now + 7 * 864e5)).deletedCount, 1);
+  assert.equal(readdirSync(path.join(f.dataDir, "files")).length, 0);
+  assert.equal((await (await f.request("/api/stats")).json()).usedBytes, 0);
+});
+
+test("disabling old-message retention keeps active history while trash cleanup continues", async (t) => {
+  const f = await fixture(t);
+  await f.setup();
+  const keep = await f.send("keep old active history");
+  const discarded = await f.send("old manual trash");
+  const now = Date.now();
+  f.db().prepare("UPDATE messages SET created_at=?").run(now - 100 * 864e5);
+  await trash(f, discarded.id);
+  f.db().prepare("UPDATE messages SET deleted_at=? WHERE id=?").run(now - 8 * 864e5, discarded.id);
+  await setMessageRetention(f, 30);
+  await setMessageRetention(f, 0);
+  assert.deepEqual(await f.cleanup(now), { archivedCount: 0, deletedCount: 1, pendingFiles: 0 });
+  assert.equal(f.db().prepare("SELECT id FROM messages").get().id, keep.id);
+});
+
+test("single and batch restores restart retention without changing sent dates or extending active records", async (t) => {
+  const f = await fixture(t);
+  await f.setup();
+  const single = await f.send("single restore");
+  const batch = await f.send("batch restore");
+  const createdAt = Date.now() - 100 * 864e5;
+  f.db().prepare("UPDATE messages SET created_at=?").run(createdAt);
+  await setMessageRetention(f, 30);
+  assert.equal((await f.cleanup()).archivedCount, 2);
+  await trash(f, single.id, false);
+  await batchMessages(f, [batch.id], false);
+  const rows = f.db().prepare("SELECT * FROM messages ORDER BY id").all();
+  assert.ok(rows.every((row) => row.restored_at > createdAt && row.created_at === createdAt));
+  await trash(f, single.id, false);
+  assert.equal(f.db().prepare("SELECT restored_at FROM messages WHERE id=?").get(single.id).restored_at, rows[0].restored_at);
+  await f.restart();
+  const firstRestored = Math.min(...rows.map((row) => row.restored_at));
+  const lastRestored = Math.max(...rows.map((row) => row.restored_at));
+  assert.equal((await f.cleanup(firstRestored + 30 * 864e5 - 1)).archivedCount, 0);
+  assert.equal((await f.cleanup(lastRestored + 30 * 864e5)).archivedCount, 2);
+});
+
+test("startup catches up on old active messages without a browser and preserves recent messages", async (t) => {
+  const f = await fixture(t);
+  await f.setup();
+  const expired = await f.send("expired while offline");
+  const recent = await f.send("recent message");
+  f.db().prepare("UPDATE messages SET created_at=? WHERE id=?").run(Date.now() - 31 * 864e5, expired.id);
+  await setMessageRetention(f, 30);
+  await f.restart();
+  const deadline = Date.now() + 4000;
+  const row = () => f.db().prepare("SELECT deleted_at FROM messages WHERE id=?").get(expired.id);
+  while (!row().deleted_at && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(row().deleted_at);
+  assert.equal(f.db().prepare("SELECT deleted_at FROM messages WHERE id=?").get(recent.id).deleted_at, null);
+});
+
+test("existing databases migrate without expiring history or changing saved trash policy", async (t) => {
+  const dataDir = mkdtempSync(path.join(tmpdir(), "file-assistant-migration-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const legacy = new DatabaseSync(path.join(dataDir, "assistant.sqlite"));
+  legacy.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO settings VALUES ('trash_retention_days', '30');
+    CREATE TABLE messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT UNIQUE NOT NULL,
+      device_id TEXT NOT NULL, device_name TEXT NOT NULL, kind TEXT NOT NULL,
+      text TEXT NOT NULL DEFAULT '', file_name TEXT, file_key TEXT, mime TEXT,
+      size INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, deleted_at INTEGER);
+    INSERT INTO messages (request_id, device_id, device_name, kind, text, created_at)
+      VALUES ('legacy-message', 'legacy-device', '旧设备', 'text', '旧消息内容', 1);`);
+  legacy.close();
+  for (let i = 0; i < 2; i++) {
+    const app = createAssistant({ dataDir });
+    try {
+      assert.equal((await app.runCleanup()).archivedCount, 0);
+      const row = app.db.prepare("SELECT * FROM messages").get();
+      assert.equal(row.text, "旧消息内容");
+      assert.equal(row.created_at, 1);
+      assert.equal(row.deleted_at, null);
+      assert.equal(row.restored_at, null);
+      assert.equal(app.db.prepare("SELECT value FROM settings WHERE key='trash_retention_days'").get().value, "30");
+    } finally { app.close(); }
+  }
+});
+
 test("manual empty requires a current preview, removes all trash beyond a page and frees only deleted attachments", async (t) => {
   const f = await fixture(t);
   await f.setup();
@@ -406,7 +571,7 @@ test("file deletion failure keeps accounted bytes and a retry journal that survi
   assert.equal((await (await f.request("/api/settings")).json()).pendingDeletionFiles, 1);
   rmSync(file, { recursive: true });
   writeFileSync(file, content);
-  assert.deepEqual(await f.cleanup(), { deletedCount: 0, pendingFiles: 0 });
+  assert.deepEqual(await f.cleanup(), { archivedCount: 0, deletedCount: 0, pendingFiles: 0 });
   assert.equal(existsSync(file), false);
   assert.equal((await (await f.request("/api/stats")).json()).usedBytes, 0);
 });

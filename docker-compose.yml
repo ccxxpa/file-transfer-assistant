@@ -1,6 +1,6 @@
 services:
   file-transfer-assistant:
-    image: ghcr.io/ccxxpa/file-transfer-assistant:1.2.1
+    image: ghcr.io/ccxxpa/file-transfer-assistant:1.3.0
     container_name: file-transfer-assistant
     restart: unless-stopped
     init: true

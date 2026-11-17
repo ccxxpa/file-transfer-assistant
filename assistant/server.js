@@ -59,6 +59,10 @@ export function createAssistant({
   db.exec(`CREATE TABLE IF NOT EXISTS pending_deletions (
     file_key TEXT PRIMARY KEY, size INTEGER NOT NULL
   );`);
+  if (!db.prepare("PRAGMA table_info(messages)").all().some((column) => column.name === "restored_at"))
+    db.exec("ALTER TABLE messages ADD COLUMN restored_at INTEGER");
+  db.exec(`CREATE INDEX IF NOT EXISTS messages_expiry
+    ON messages(COALESCE(restored_at, created_at)) WHERE deleted_at IS NULL`);
   db.prepare("DELETE FROM sessions WHERE expires < ?").run(Date.now());
   const getSetting = (key) =>
     db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value;
@@ -71,6 +75,7 @@ export function createAssistant({
   const reserved = new Set();
   const cleanupIntervalMs = 60 * 60e3;
   const retentionDays = () => Number(getSetting("trash_retention_days") ?? 7);
+  const messageRetentionDays = () => Number(getSetting("message_retention_days") ?? 0);
   const pendingFiles = () => db.prepare("SELECT COUNT(*) AS n FROM pending_deletions").get().n;
   let fileCleanup;
   let closed = false;
@@ -117,13 +122,17 @@ export function createAssistant({
   }
   async function runCleanup(now = Date.now()) {
     if (closed) return;
+    const messageDays = messageRetentionDays();
+    const archivedCount = messageDays ? Number(db.prepare(`UPDATE messages SET deleted_at=?
+      WHERE deleted_at IS NULL AND COALESCE(restored_at, created_at) <= ?`)
+      .run(now, now - messageDays * 864e5).changes) : 0;
     const days = retentionDays();
     const deletedCount = days ? enqueuePurge(now - days * 864e5) : 0;
     await flushDeletedFiles();
     if (closed) return;
     db.prepare("INSERT OR REPLACE INTO settings VALUES ('last_cleanup_at', ?)").run(String(now));
     broadcast({ type: "change" });
-    return { deletedCount, pendingFiles: pendingFiles() };
+    return { archivedCount, deletedCount, pendingFiles: pendingFiles() };
   }
   const publicMessage = (row) => ({
     id: row.id,
@@ -388,22 +397,37 @@ export function createAssistant({
       maxStorageBytes,
       maxFileBytes,
       trashRetentionDays: retentionDays(),
+      messageRetentionDays: messageRetentionDays(),
       pendingDeletionFiles: pendingFiles(),
     });
   });
   app.get("/api/settings", auth, (req, res) => res.json({
     trashRetentionDays: retentionDays(),
+    messageRetentionDays: messageRetentionDays(),
     cleanupIntervalHours: 1,
     lastCleanupAt: Number(getSetting("last_cleanup_at")) || null,
     pendingDeletionFiles: pendingFiles(),
   }));
   app.put("/api/settings", auth, (req, res) => {
-    const days = req.body.trashRetentionDays;
-    if (!Number.isInteger(days) || ![0, 1, 7, 30, 90].includes(days))
-      return fail(res, 400, "请选择关闭，或保留 1、7、30、90 天。");
-    db.prepare("INSERT OR REPLACE INTO settings VALUES ('trash_retention_days', ?)").run(String(days));
+    const options = {
+      trashRetentionDays: { key: "trash_retention_days", days: [0, 1, 7, 30, 90] },
+      messageRetentionDays: { key: "message_retention_days", days: [0, 7, 30, 90, 180, 365] },
+    };
+    const updates = Object.entries(req.body || {});
+    if (!updates.length || updates.some(([name, days]) =>
+      !Object.hasOwn(options, name) || !Number.isInteger(days) || !options[name].days.includes(days)))
+      return fail(res, 400, "保留时间无效，请从列表中选择后重试。");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const save = db.prepare("INSERT OR REPLACE INTO settings VALUES (?, ?)");
+      for (const [name, days] of updates) save.run(options[name].key, String(days));
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
     broadcast({ type: "change" });
-    res.json({ trashRetentionDays: days });
+    res.json({ trashRetentionDays: retentionDays(), messageRetentionDays: messageRetentionDays() });
   });
   app.get("/api/trash/preview", auth, (req, res) => res.json(trashSnapshot()));
   app.post("/api/trash/empty", auth, asyncRoute(async (req, res) => {
@@ -479,7 +503,10 @@ export function createAssistant({
         db.exec("ROLLBACK");
         return fail(res, 409, "部分记录已被删除或恢复，本次未作更改。请重新查看匹配记录后再确认。");
       }
-      const result = db.prepare(`UPDATE messages SET deleted_at=? WHERE ${condition}`).run(deleted ? Date.now() : null, encoded);
+      const now = Date.now();
+      const result = deleted
+        ? db.prepare(`UPDATE messages SET deleted_at=? WHERE ${condition}`).run(now, encoded)
+        : db.prepare(`UPDATE messages SET deleted_at=NULL, restored_at=? WHERE ${condition}`).run(now, encoded);
       db.exec("COMMIT");
       broadcast({ type: "change" });
       res.json({ changedCount: Number(result.changes) });
@@ -676,10 +703,10 @@ export function createAssistant({
     if (!row) return fail(res, 404, "这条记录不存在。");
     if (typeof req.body.deleted !== "boolean")
       return fail(res, 400, "操作无效。");
-    db.prepare("UPDATE messages SET deleted_at=? WHERE id=?").run(
-      req.body.deleted ? Date.now() : null,
-      row.id,
-    );
+    if (req.body.deleted && row.deleted_at === null)
+      db.prepare("UPDATE messages SET deleted_at=? WHERE id=?").run(Date.now(), row.id);
+    else if (!req.body.deleted && row.deleted_at !== null)
+      db.prepare("UPDATE messages SET deleted_at=NULL, restored_at=? WHERE id=?").run(Date.now(), row.id);
     broadcast({ type: "change" });
     res.json({ ok: true });
   });
@@ -711,7 +738,7 @@ export function createAssistant({
     runCleanup().catch((error) => console.error("Scheduled cleanup failed:", error.code || error.name));
   }, cleanupIntervalMs);
   cleanupTimer.unref();
-  // Catch up after downtime; keep the user's chosen seven-day default.
+  // Catch up after downtime using the saved message and trash retention policies.
   const startupCleanup = setTimeout(() => {
     runCleanup().catch((error) => console.error("Startup cleanup failed:", error.code || error.name));
   }, 1000);

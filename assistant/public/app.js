@@ -1065,16 +1065,24 @@ async function showSettings() {
   $("password-section").open = false;
   $("cleanup-error").textContent = "";
   $("cleanup-feedback").textContent = "";
+  $("message-retention-error").textContent = "";
+  $("message-retention-feedback").textContent = "";
+  $("message-retention").disabled = true;
+  $("save-message-retention").disabled = true;
   $("trash-retention").disabled = true;
   $("save-cleanup").disabled = true;
   $("settings-dialog").showModal();
   try {
     const settings = await api("/api/settings");
     $("trash-retention").value = String(settings.trashRetentionDays);
+    $("message-retention").value = String(settings.messageRetentionDays);
+    $("message-retention").disabled = false;
+    $("save-message-retention").disabled = false;
     $("trash-retention").disabled = false;
     $("save-cleanup").disabled = false;
   } catch (error) {
     $("cleanup-error").textContent = `读取设置失败：${error.message} 关闭设置后可重新打开重试。`;
+    $("message-retention-error").textContent = $("cleanup-error").textContent;
   }
 }
 for (const id of ["settings-button", "settings-rail"])
@@ -1165,6 +1173,29 @@ function setDialogBusy(id, busy) {
     }
   }
 }
+$("message-retention-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("message-retention-error").textContent = "";
+  $("message-retention-feedback").textContent = "";
+  const days = Number($("message-retention").value);
+  setDialogBusy("settings-dialog", true);
+  $("save-message-retention").textContent = "正在保存…";
+  try {
+    const settings = await api("/api/settings", {
+      method: "PUT", body: JSON.stringify({ messageRetentionDays: days }),
+    });
+    state.stats.messageRetentionDays = settings.messageRetentionDays;
+    $("message-retention-feedback").textContent = days
+      ? `已保存。下次检查会将满 ${days} 天的消息移入“最近删除”。`
+      : "已关闭自动删除旧消息。已移入最近删除的内容仍按回收站规则处理。";
+  } catch (error) {
+    $("message-retention-error").textContent = error.message;
+  } finally {
+    setDialogBusy("settings-dialog", false);
+    $("save-message-retention").textContent = "保存保留时间";
+    updateTrashSettings();
+  }
+});
 $("cleanup-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("cleanup-error").textContent = "";
@@ -1177,7 +1208,7 @@ $("cleanup-form").addEventListener("submit", async (event) => {
     state.stats.trashRetentionDays = days;
     $("cleanup-feedback").textContent = days
       ? `已保存。下次检查会清理删除满 ${days} 天的内容。`
-      : "已关闭自动清理。最近删除会保留到手动清空。";
+      : "已关闭回收站自动清空。最近删除会保留到手动清空。";
   } catch (error) {
     $("cleanup-error").textContent = error.message;
   } finally {

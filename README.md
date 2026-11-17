@@ -4,7 +4,7 @@
 
 - 文字、链接、图片和文件共享，消息实时同步
 - 历史记录保存在服务器，发送设备离线后仍可查看
-- 搜索、按日期清理、最近删除与恢复
+- 搜索、按日期清理、自动删除旧消息、最近删除与恢复
 - 密码访问，支持 Docker / NAS 部署
 
 ## Docker 启动
@@ -15,7 +15,7 @@
 docker run -d --name file-transfer-assistant --restart unless-stopped --init \
   -p 4826:4826 -e ALLOW_REMOTE_SETUP=true \
   -v "$PWD/assistant-data:/data" \
-  ghcr.io/ccxxpa/file-transfer-assistant:1.2.1
+  ghcr.io/ccxxpa/file-transfer-assistant:1.3.0
 ```
 
 或使用 Compose：
@@ -30,6 +30,8 @@ docker compose up -d
 打开 `http://服务器IP:4826`，首次访问设置密码。公网使用请配置 HTTPS。
 
 数据保存在 `./assistant-data`，升级时保留此目录。默认单文件上限 100 MB、总容量 5 GB；Compose 部署可将 `.env.example` 复制为 `.env` 后调整。另提供 `latest` 标签。
+
+设置中可选消息保留 7 / 30 / 90 / 180 / 365 天，默认关闭。到期消息每小时移入“最近删除”，再按回收站规则清空；恢复后重新计时。
 
 ## 本地运行
 
